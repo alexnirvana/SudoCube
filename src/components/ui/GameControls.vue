@@ -6,11 +6,13 @@ import { generateSudoku } from '../../core/generator';
 // 定义props
 const props = defineProps<{
   darkMode: boolean;
+  is3d: boolean;
 }>();
 
 // 定义事件
 const emit = defineEmits<{
   'toggle-dark-mode': [];
+  'toggle-3d-mode': [];
 }>();
 
 const gameStore = useGameStore();
@@ -86,6 +88,11 @@ const resetGame = () => {
 // 切换夜间模式
 const toggleDarkMode = () => {
   emit('toggle-dark-mode');
+};
+
+// 切换3D模式
+const toggle3DMode = () => {
+  emit('toggle-3d-mode');
 };
 
 // 启动计时器
@@ -225,6 +232,25 @@ onUnmounted(() => {
         {{ gameStore.formattedTime }}
       </div>
       
+      <!-- 3D/2D模式切换 -->
+      <button class="control-btn mode-btn" @click="toggle3DMode" :title="is3d ? '切换到2D模式' : '切换到3D模式'">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <g v-if="is3d" stroke="currentColor" stroke-width="2" fill="none">
+            <!-- 3D立方体图标 -->
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27,6.96 12,12.01 20.73,6.96"/>
+            <line x1="12" y1="22.08" x2="12" y2="12"/>
+          </g>
+          <g v-else stroke="currentColor" stroke-width="2" fill="none">
+            <!-- 2D平面图标 -->
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="9" y1="9" x2="9" y2="15"/>
+            <line x1="15" y1="9" x2="15" y2="15"/>
+            <line x1="9" y1="12" x2="15" y2="12"/>
+          </g>
+        </svg>
+      </button>
+
       <!-- 夜间模式切换 -->
       <button class="control-btn mode-btn" @click="toggleDarkMode">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">

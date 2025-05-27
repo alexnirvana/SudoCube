@@ -19,6 +19,9 @@ const showToast = ref(false);
 // 夜间模式控制
 const isDarkMode = ref(true); // 默认为夜间模式（现在的霓虹灯风格）
 
+// 3D模式控制
+const is3DMode = ref(false); // 默认为2D模式
+
 onMounted(() => {
   // 初始化游戏
   gameStore.initGame();
@@ -73,6 +76,11 @@ const handleConflict = (conflictType: string) => {
 const toggleDarkMode = () => {
   isDarkMode.value = !isDarkMode.value;
 };
+
+// 切换3D模式
+const toggle3DMode = () => {
+  is3DMode.value = !is3DMode.value;
+};
 </script>
 
 <template>
@@ -80,12 +88,15 @@ const toggleDarkMode = () => {
     <div class="game-container">
       <GameBoard 
         :dark-mode="isDarkMode"
+        :is-3d="is3DMode"
         @game-complete="handleGameComplete"
         @conflict="handleConflict"
       />
       <GameControls 
         :dark-mode="isDarkMode"
-        @toggle-dark-mode="toggleDarkMode" 
+        :is-3d="is3DMode"
+        @toggle-dark-mode="toggleDarkMode"
+        @toggle-3d-mode="toggle3DMode"
       />
     </div>
     
