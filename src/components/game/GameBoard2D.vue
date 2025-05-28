@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, watch } from 'vue';
 import { useGameStore } from '../../store/game';
 
 // 定义props

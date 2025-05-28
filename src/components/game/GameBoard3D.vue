@@ -4,10 +4,12 @@ import { useGameStore } from '../../store/game';
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+import { getStyle, getStyleList, type BoardStyle } from '../../core/styles';
 
 // 定义props
 const props = defineProps<{
   darkMode: boolean;
+  styleName?: string;
 }>();
 
 // 定义事件
@@ -32,11 +34,14 @@ let boardGroup: THREE.Group;
 let cellMeshes: THREE.Mesh[][] = [];
 let textMeshes: (THREE.Mesh | null)[][] = [];
 
-// 材质
-let stoneMaterial: THREE.MeshPhongMaterial;
-let selectedMaterial: THREE.MeshPhongMaterial;
-let presetMaterial: THREE.MeshPhongMaterial;
-let conflictMaterial: THREE.MeshPhongMaterial;
+// 当前样式和材质
+let currentStyle: BoardStyle;
+let materials: {
+  stone: THREE.Material;
+  selected: THREE.Material;
+  preset: THREE.Material;
+  conflict: THREE.Material;
+};
 
 // 字体加载器
 let fontLoader: FontLoader;
@@ -45,13 +50,17 @@ let font: any;
 const initThreeJS = () => {
   if (!canvasRef.value) return;
 
+  // 初始化样式
+  initStyle();
+
   // 创建场景
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(props.darkMode ? 0x000033 : 0xf5f5f5);
+  scene.background = currentStyle.getSceneBackground(props.darkMode);
 
-  // 创建相机 - 设置为俯视角度，像2D一样
+  // 创建相机
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 15, 0);
+  const cameraPos = currentStyle.getCameraPosition();
+  camera.position.copy(cameraPos);
   camera.lookAt(0, 0, 0);
 
   // 创建渲染器
@@ -60,34 +69,16 @@ const initThreeJS = () => {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  // 创建光源
-  const ambientLight = new THREE.AmbientLight(props.darkMode ? 0x404040 : 0x808080, 0.4);
-  scene.add(ambientLight);
-
-  const directionalLight = new THREE.DirectionalLight(props.darkMode ? 0xffffff : 0xffffff, 0.8);
-  directionalLight.position.set(0, 20, 5);
-  directionalLight.castShadow = true;
-  directionalLight.shadow.mapSize.width = 2048;
-  directionalLight.shadow.mapSize.height = 2048;
-  directionalLight.shadow.camera.near = 0.1;
-  directionalLight.shadow.camera.far = 50;
-  directionalLight.shadow.camera.left = -10;
-  directionalLight.shadow.camera.right = 10;
-  directionalLight.shadow.camera.top = 10;
-  directionalLight.shadow.camera.bottom = -10;
-  scene.add(directionalLight);
-
-  // 添加侧面光源增强立体感
-  const sideLight = new THREE.DirectionalLight(props.darkMode ? 0x4444ff : 0xffffff, 0.3);
-  sideLight.position.set(10, 10, 0);
-  scene.add(sideLight);
+  // 添加光源
+  const lights = currentStyle.getLights(props.darkMode);
+  lights.forEach(light => scene.add(light));
 
   // 创建射线投射器和鼠标向量
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
 
   // 创建材质
-  createMaterials();
+  materials = currentStyle.createMaterials(props.darkMode);
 
   // 加载字体并创建棋盘
   loadFont();
@@ -101,37 +92,19 @@ const initThreeJS = () => {
   animate();
 };
 
-const createMaterials = () => {
-  // 石头材质
-  stoneMaterial = new THREE.MeshPhongMaterial({
-    color: props.darkMode ? 0x444444 : 0x999999,
-    shininess: 60,
-    specular: 0x222222,
-  });
-
-  // 选中材质
-  selectedMaterial = new THREE.MeshPhongMaterial({
-    color: props.darkMode ? 0xff00ff : 0x6a5acd,
-    shininess: 80,
-    emissive: props.darkMode ? 0x330033 : 0x220044,
-    specular: 0x444444,
-  });
-
-  // 预设材质
-  presetMaterial = new THREE.MeshPhongMaterial({
-    color: props.darkMode ? 0x777777 : 0xbbbbbb,
-    shininess: 70,
-    specular: 0x333333,
-  });
-
-  // 冲突材质
-  conflictMaterial = new THREE.MeshPhongMaterial({
-    color: 0xff4444,
-    shininess: 80,
-    emissive: 0x440000,
-    specular: 0x444444,
-  });
+const initStyle = () => {
+  // 获取样式，默认使用图片样式
+  const styleName = props.styleName || 'image';
+  const style = getStyle(styleName);
+  if (!style) {
+    console.warn(`样式 '${styleName}' 不存在，使用默认样式`);
+    currentStyle = getStyle('stone')!;
+  } else {
+    currentStyle = style;
+  }
 };
+
+
 
 const loadFont = () => {
   fontLoader = new FontLoader();
@@ -168,8 +141,6 @@ const createBoard = () => {
   const cellSize = 1.2;
   const spacing = 0.15;
   const totalSize = size * (cellSize + spacing) - spacing;
-  const startX = -totalSize / 2 + cellSize / 2;
-  const startZ = -totalSize / 2 + cellSize / 2;
 
   // 创建格子
   for (let row = 0; row < size; row++) {
@@ -177,13 +148,13 @@ const createBoard = () => {
     textMeshes[row] = [];
     
     for (let col = 0; col < size; col++) {
-      // 创建石头格子 - 俯视角度下的立体格子
-      const geometry = new THREE.BoxGeometry(cellSize, 0.4, cellSize);
-      const mesh = new THREE.Mesh(geometry, stoneMaterial);
+      // 使用样式系统创建几何体
+      const geometry = currentStyle.createCellGeometry(cellSize);
+      const mesh = new THREE.Mesh(geometry, materials.stone);
       
-      mesh.position.x = startX + col * (cellSize + spacing);
-      mesh.position.y = 0.2;
-      mesh.position.z = startZ + row * (cellSize + spacing);
+      // 使用样式系统计算位置
+      const position = currentStyle.getCellPosition(row, col, cellSize, spacing, totalSize);
+      mesh.position.copy(position);
       
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -196,8 +167,6 @@ const createBoard = () => {
       createNumberText(row, col);
     }
   }
-
-
 
   scene.add(boardGroup);
   updateBoard();
@@ -220,47 +189,64 @@ const createNumberText = (row: number, col: number) => {
 
   const text = formatCellValue(value);
   let geometry: THREE.BufferGeometry;
+  let material: THREE.Material;
   
-  if (font) {
-    // 使用3D文字几何体
-    geometry = new TextGeometry(text, {
-      font: font,
-      size: 0.5, // 增大文字尺寸
-      height: 0.03, // 稍微增加文字厚度
-      curveSegments: 12,
-      bevelEnabled: true,
-      bevelThickness: 0.015,
-      bevelSize: 0.008,
-      bevelOffset: 0,
-      bevelSegments: 3
-    });
-    
-    // 居中文字
-    geometry.computeBoundingBox();
-    const centerOffsetX = -0.5 * (geometry.boundingBox!.max.x - geometry.boundingBox!.min.x);
-    const centerOffsetY = -0.5 * (geometry.boundingBox!.max.y - geometry.boundingBox!.min.y);
-    const centerOffsetZ = -0.5 * (geometry.boundingBox!.max.z - geometry.boundingBox!.min.z);
-    geometry.translate(centerOffsetX, centerOffsetY, centerOffsetZ);
+  // 检查当前样式是否支持手写数字材质
+  if (currentStyle.createNumberMaterial) {
+    // 使用手写数字材质 - 创建平面几何体作为载体
+    geometry = new THREE.PlaneGeometry(0.8, 0.8);
+    material = currentStyle.createNumberMaterial(text, props.darkMode);
   } else {
-    // 备用方案：使用更薄的立方体
-    geometry = new THREE.BoxGeometry(0.5, 0.08, 0.5);
+    // 使用传统3D文字或备用方案
+    if (font) {
+      // 使用3D文字几何体
+      geometry = new TextGeometry(text, {
+        font: font,
+        size: 0.5, // 增大文字尺寸
+        height: 0.03, // 稍微增加文字厚度
+        curveSegments: 12,
+        bevelEnabled: true,
+        bevelThickness: 0.015,
+        bevelSize: 0.008,
+        bevelOffset: 0,
+        bevelSegments: 3
+      });
+      
+      // 居中文字
+      geometry.computeBoundingBox();
+      const centerOffsetX = -0.5 * (geometry.boundingBox!.max.x - geometry.boundingBox!.min.x);
+      const centerOffsetY = -0.5 * (geometry.boundingBox!.max.y - geometry.boundingBox!.min.y);
+      const centerOffsetZ = -0.5 * (geometry.boundingBox!.max.z - geometry.boundingBox!.min.z);
+      geometry.translate(centerOffsetX, centerOffsetY, centerOffsetZ);
+    } else {
+      // 备用方案：使用更薄的立方体
+      geometry = new THREE.BoxGeometry(0.5, 0.08, 0.5);
+    }
+    
+    material = new THREE.MeshPhongMaterial({
+      color: isCellPreset(row, col) ? 
+        (props.darkMode ? 0xffffff : 0x333333) : 
+        (props.darkMode ? 0xffff00 : 0x1e90ff),
+      shininess: 100,
+      specular: 0x222222
+    });
   }
   
-  const material = new THREE.MeshPhongMaterial({
-    color: isCellPreset(row, col) ? 
-      (props.darkMode ? 0xffffff : 0x333333) : 
-      (props.darkMode ? 0xffff00 : 0x1e90ff),
-    shininess: 100,
-    specular: 0x222222
-  });
-  
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.copy(cellMeshes[row][col].position);
-  mesh.position.y = 0.401; // 让数字刚好在方块表面
   
-  // 让数字朝向用户（朝上）
-  if (font) {
-    mesh.rotation.x = -Math.PI / 2; // 旋转90度让文字朝上
+  // 使用样式系统计算文本位置和旋转
+  const cellPosition = cellMeshes[row][col].position;
+  const textPosition = currentStyle.getTextPosition(cellPosition);
+  mesh.position.copy(textPosition);
+  
+  // 使用样式系统的文本旋转
+  if (currentStyle.createNumberMaterial) {
+    // 手写数字材质使用平面，需要不同的旋转
+    const textRotation = currentStyle.getTextRotation();
+    mesh.rotation.copy(textRotation);
+  } else if (font) {
+    const textRotation = currentStyle.getTextRotation();
+    mesh.rotation.copy(textRotation);
   }
   
   mesh.castShadow = true;
@@ -284,13 +270,13 @@ const updateBoard = () => {
 
       // 更新格子材质
       if (isCellSelected(row, col)) {
-        mesh.material = selectedMaterial;
+        mesh.material = materials.selected;
       } else if (isCellPreset(row, col)) {
-        mesh.material = presetMaterial;
+        mesh.material = materials.preset;
       } else if (hasCellConflict(row, col)) {
-        mesh.material = conflictMaterial;
+        mesh.material = materials.conflict;
       } else {
-        mesh.material = stoneMaterial;
+        mesh.material = materials.stone;
       }
 
       // 更新数字文本
@@ -520,11 +506,68 @@ watch(() => gameStore.isComplete, (isComplete) => {
   }
 });
 
-watch(() => props.darkMode, () => {
+// 样式切换功能
+const changeStyle = (styleName: string) => {
+  const style = getStyle(styleName);
+  if (!style) {
+    console.warn(`样式 '${styleName}' 不存在`);
+    return;
+  }
+  
+  currentStyle = style;
+  
   if (scene) {
-    scene.background = new THREE.Color(props.darkMode ? 0x000033 : 0xf5f5f5);
-    createMaterials();
+    // 清除旧的光源
+    const lightsToRemove = scene.children.filter(child => child instanceof THREE.Light);
+    lightsToRemove.forEach(light => scene.remove(light));
+    
+    // 添加新的光源
+    const lights = currentStyle.getLights(props.darkMode);
+    lights.forEach(light => scene.add(light));
+    
+    // 更新场景背景
+    scene.background = currentStyle.getSceneBackground(props.darkMode);
+    
+    // 更新相机位置
+    const cameraPos = currentStyle.getCameraPosition();
+    camera.position.copy(cameraPos);
+    
+    // 重新创建材质
+    materials = currentStyle.createMaterials(props.darkMode);
+    
+    // 重新创建棋盘
+    createBoard();
+  }
+};
+
+// 获取可用样式列表
+const getAvailableStyles = () => {
+  return getStyleList();
+};
+
+watch(() => props.darkMode, () => {
+  if (scene && currentStyle) {
+    // 清除旧的光源
+    const lightsToRemove = scene.children.filter(child => child instanceof THREE.Light);
+    lightsToRemove.forEach(light => scene.remove(light));
+    
+    // 添加新的光源
+    const lights = currentStyle.getLights(props.darkMode);
+    lights.forEach(light => scene.add(light));
+    
+    // 更新场景背景
+    scene.background = currentStyle.getSceneBackground(props.darkMode);
+    
+    // 重新创建材质
+    materials = currentStyle.createMaterials(props.darkMode);
+    
     updateBoard();
+  }
+});
+
+watch(() => props.styleName, (newStyleName) => {
+  if (newStyleName) {
+    changeStyle(newStyleName);
   }
 });
 
@@ -547,6 +590,12 @@ onUnmounted(() => {
   if (renderer) {
     renderer.dispose();
   }
+});
+
+// 暴露给父组件的方法
+defineExpose({
+  changeStyle,
+  getAvailableStyles
 });
 </script>
 
@@ -690,4 +739,4 @@ onUnmounted(() => {
     font-size: 12px;
   }
 }
-</style> 
+</style>
